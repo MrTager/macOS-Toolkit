@@ -5,6 +5,14 @@ let package = Package(
     name: "Toolkit",
     platforms: [.macOS(.v13)],
     targets: [
-        .executableTarget(name: "Toolkit", path: "Sources/Toolkit")
+        .executableTarget(
+            name: "Toolkit",
+            path: "Sources/Toolkit",
+            linkerSettings: [
+                .linkedFramework("SystemConfiguration"),
+                .linkedFramework("CoreGraphics"),
+                .linkedFramework("IOKit")
+            ]
+        )
     ]
 )
