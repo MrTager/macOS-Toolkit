@@ -67,6 +67,8 @@ cat > "$APP_DIR/$APP_NAME.app/Contents/Info.plist" <<'PLIST'
     <true/>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>NSUserNotificationsUsageDescription</key>
+    <string>用于发送系统指标告警通知</string>
 </dict>
 </plist>
 PLIST

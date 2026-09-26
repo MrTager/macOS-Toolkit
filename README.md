@@ -8,6 +8,7 @@
 - **监控面板**：CPU 总览曲线 + 每核仪表、内存构成（已用/缓存/压缩/空闲 + Swap）、网络上下行速率曲线、磁盘容量、温度（电池温度 + CPU 热压力）
 - **进程管理**：全量进程列表（CPU/内存排序、搜索），支持 SIGTERM / SIGKILL 结束进程
 - **工具中枢**：工具列表可增删改、拖拽排序，支持「从已安装应用选择」自动填 Bundle ID；一键启停 + 实时运行状态；支持开机自启开关
+- **自动化规则**：CPU/内存/电池温度/CPU 热压力阈值告警，系统通知推送，冷却间隔防骚扰，规则持久化 + 最近事件记录
 
 ## 使用
 
@@ -53,6 +54,6 @@ Sources/Toolkit/
 
 ## 后续规划
 
-- P2 完整版：SMJobBless 特权助手，直读 CPU die 温度/风扇转速并控制调速（macOS 26 已封死无特权 SMC 通道，见 scripts/probe-smc.c）
-- P4：自动化规则（温度阈值联动、内存告警清理）
+- ~~P2 完整版：CPU die 温度/风扇转速~~ 已确认 macOS 26 封死了全部无特权 SMC 通道（经典 AppleSMC IOConnectCall 接口移除、libSMC 不在 dyld 缓存、IOReport 采样为空、powermetrics 仅 root 可用），验证过程见 `scripts/probe-smc.c`。如需 CPU die 温度/风扇控制需 SMJobBless 特权助手（待需求明确再做）
+- ~~P4：自动化规则~~ 已完成
 

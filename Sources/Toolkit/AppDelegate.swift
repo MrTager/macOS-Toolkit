@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let toolStore = ToolStore()
     private let toolManager: ToolManager
     private let tempSensor = TempSensorService()
+    private let ruleEngine = RuleEngine()
 
     override init() {
         toolManager = ToolManager(toolStore: toolStore)
@@ -34,7 +35,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 processMonitor: processMonitor,
                 toolStore: toolStore,
                 toolManager: toolManager,
-                tempSensor: tempSensor
+                tempSensor: tempSensor,
+                ruleEngine: ruleEngine
             )
         )
 
@@ -58,6 +60,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         processMonitor.start()
         toolManager.start()
         tempSensor.start()
+        ruleEngine.configure(monitor: monitor, tempSensor: tempSensor)
+        ruleEngine.start()
     }
 
     @objc private func statusItemClicked(_ sender: NSStatusBarButton) {

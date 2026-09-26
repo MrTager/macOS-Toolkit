@@ -6,6 +6,7 @@ struct ToolkitView: View {
     @ObservedObject var toolStore: ToolStore
     @ObservedObject var toolManager: ToolManager
     @ObservedObject var tempSensor: TempSensorService
+    @ObservedObject var ruleEngine: RuleEngine
 
     @State private var selectedTab = 0
 
@@ -15,6 +16,7 @@ struct ToolkitView: View {
                 tabButton("监控", icon: "chart.line.uptrend.xyaxis", tag: 0)
                 tabButton("进程", icon: "square.stack.3d.up", tag: 1)
                 tabButton("工具", icon: "wrench.and.screwdriver", tag: 2)
+                tabButton("规则", icon: "bell.badge", tag: 3)
                 Spacer()
                 Text("开机 \(Format.duration(monitor.uptime))")
                     .font(.caption)
@@ -31,7 +33,8 @@ struct ToolkitView: View {
                 switch selectedTab {
                 case 0: DashboardView(monitor: monitor, tempSensor: tempSensor)
                 case 1: ProcessListView(processMonitor: processMonitor)
-                default: ToolsView(store: toolStore, manager: toolManager)
+                case 2: ToolsView(store: toolStore, manager: toolManager)
+                default: RulesView(engine: ruleEngine)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
