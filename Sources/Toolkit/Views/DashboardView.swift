@@ -3,6 +3,7 @@ import SwiftUI
 struct ToolkitView: View {
     @ObservedObject var monitor: SystemMonitor
     @ObservedObject var processMonitor: ProcessMonitor
+    @ObservedObject var toolStore: ToolStore
     @ObservedObject var toolManager: ToolManager
     @ObservedObject var tempSensor: TempSensorService
 
@@ -30,7 +31,7 @@ struct ToolkitView: View {
                 switch selectedTab {
                 case 0: DashboardView(monitor: monitor, tempSensor: tempSensor)
                 case 1: ProcessListView(processMonitor: processMonitor)
-                default: ToolsView(manager: toolManager)
+                default: ToolsView(store: toolStore, manager: toolManager)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

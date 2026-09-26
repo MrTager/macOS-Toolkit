@@ -9,8 +9,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private let monitor = SystemMonitor()
     private let processMonitor = ProcessMonitor()
-    private let toolManager = ToolManager()
+    private let toolStore = ToolStore()
+    private let toolManager: ToolManager
     private let tempSensor = TempSensorService()
+
+    override init() {
+        toolManager = ToolManager(toolStore: toolStore)
+        super.init()
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -26,6 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             rootView: ToolkitView(
                 monitor: monitor,
                 processMonitor: processMonitor,
+                toolStore: toolStore,
                 toolManager: toolManager,
                 tempSensor: tempSensor
             )
