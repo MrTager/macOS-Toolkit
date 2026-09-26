@@ -4,6 +4,7 @@ struct ToolkitView: View {
     @ObservedObject var monitor: SystemMonitor
     @ObservedObject var processMonitor: ProcessMonitor
     @ObservedObject var toolManager: ToolManager
+    @ObservedObject var tempSensor: TempSensorService
 
     @State private var selectedTab = 0
 
@@ -27,7 +28,7 @@ struct ToolkitView: View {
 
             Group {
                 switch selectedTab {
-                case 0: DashboardView(monitor: monitor)
+                case 0: DashboardView(monitor: monitor, tempSensor: tempSensor)
                 case 1: ProcessListView(processMonitor: processMonitor)
                 default: ToolsView(manager: toolManager)
                 }
@@ -59,6 +60,7 @@ struct ToolkitView: View {
 
 struct DashboardView: View {
     @ObservedObject var monitor: SystemMonitor
+    @ObservedObject var tempSensor: TempSensorService
 
     var body: some View {
         ScrollView {
@@ -67,6 +69,7 @@ struct DashboardView: View {
                 memorySection
                 networkSection
                 diskSection
+                TemperatureCard(tempSensor: tempSensor)
             }
             .padding(14)
         }

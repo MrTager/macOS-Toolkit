@@ -209,11 +209,11 @@ final class SystemMonitor: ObservableObject {
     }
 
     private static func interfaceCounters() -> (inBytes: UInt64, outBytes: UInt64) {
-        var mib: [Int32] = [CTL_NET, AF_ROUTE, 0, 0, NET_RT_IFLIST2]
+        var mib: [Int32] = [CTL_NET, AF_ROUTE, 0, 0, NET_RT_IFLIST2, 0]
         var length: size_t = 0
-        guard sysctl(&mib, 5, nil, &length, nil, 0) == 0, length > 0 else { return (0, 0) }
+        guard sysctl(&mib, 6, nil, &length, nil, 0) == 0, length > 0 else { return (0, 0) }
         var buffer = [CChar](repeating: 0, count: length)
-        guard sysctl(&mib, 5, &buffer, &length, nil, 0) == 0 else { return (0, 0) }
+        guard sysctl(&mib, 6, &buffer, &length, nil, 0) == 0 else { return (0, 0) }
 
         return buffer.withUnsafeBytes { raw -> (UInt64, UInt64) in
             var inTotal: UInt64 = 0
