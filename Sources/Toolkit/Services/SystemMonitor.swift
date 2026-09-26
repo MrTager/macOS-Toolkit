@@ -215,24 +215,72 @@ final class SystemMonitor: ObservableObject {
         var buffer = [CChar](repeating: 0, count: length)
         guard sysctl(&mib, 6, &buffer, &length, nil, 0) == 0 else { return (0, 0) }
 
-        return buffer.withUnsafeBytes { raw -> (UInt64, UInt64) in
+        let primaryName = primaryInterfaceName()
+
+        return buffer.withUnsafeBytes { raw in
             var inTotal: UInt64 = 0
             var outTotal: UInt64 = 0
             var offset = 0
+            var currentName: [CChar] = []
 
             while offset + MemoryLayout<if_msghdr2>.size <= raw.count {
                 let header = raw.load(fromByteOffset: offset, as: if_msghdr2.self)
-                if header.ifm_type == UInt8(RTM_IFINFO2) {
-                    let data = header.ifm_data
-                    if data.ifi_type != UInt8(IFT_LOOP) {
+                switch Int32(header.ifm_type) {
+                case RTM_IFINFO2:
+                    if currentName == primaryName {
+                        let data = header.ifm_data
                         inTotal += UInt64(data.ifi_ibytes)
                         outTotal += UInt64(data.ifi_obytes)
                     }
+                case RTM_IFINFO:
+                    let nameOffset = offset + MemoryLayout<if_msghdr>.size
+                    if nameOffset + 16 <= raw.count {
+                        var name: [CChar] = []
+                        for i in nameOffset..<(nameOffset + 16) {
+                            let byte = raw.loadUnaligned(fromByteOffset: i, as: Int8.self)
+                            if byte == 0 { break }
+                            name.append(byte)
+                        }
+                        currentName = name
+                    }
+                default:
+                    break
                 }
                 if header.ifm_msglen == 0 { break }
                 offset += Int(header.ifm_msglen)
             }
             return (inTotal, outTotal)
+        }
+    }
+
+    private static func primaryInterfaceName() -> [CChar] {
+        var mib: [Int32] = [CTL_NET, AF_ROUTE, 0, 0, NET_RT_DUMP2, 0]
+        var length: size_t = 0
+        guard sysctl(&mib, 6, nil, &length, nil, 0) == 0, length > 0 else { return [] }
+        var buffer = [CChar](repeating: 0, count: length)
+        guard sysctl(&mib, 6, &buffer, &length, nil, 0) == 0 else { return [] }
+
+        var best: (index: UInt32, priority: Int) = (0, Int.max)
+        return buffer.withUnsafeBytes { raw in
+            var offset = 0
+            while offset + MemoryLayout<rt_msghdr2>.size <= raw.count {
+                let header = raw.loadUnaligned(fromByteOffset: offset, as: rt_msghdr2.self)
+                if header.rtm_flags & RTF_GATEWAY != 0, header.rtm_addrs & RTA_DST != 0 {
+                    if best.index == 0 || UInt32(header.rtm_index) < best.index {
+                        best = (UInt32(header.rtm_index), 0)
+                    }
+                }
+                if header.rtm_msglen == 0 { break }
+                offset += Int(header.rtm_msglen)
+            }
+
+            guard best.index > 0 else { return [] }
+            let index: UInt32 = best.index
+            var name = [CChar](repeating: 0, count: Int(IF_NAMESIZE))
+            if if_indextoname(index, &name) != nil {
+                return Array(name.prefix { $0 != 0 })
+            }
+            return []
         }
     }
 }

@@ -3,6 +3,7 @@ import SwiftUI
 struct ToolsView: View {
     @ObservedObject var store: ToolStore
     @ObservedObject var manager: ToolManager
+    @ObservedObject var scrollEnhancer: ScrollEnhancer
     @State private var editingTool: ManagedTool?
     @State private var showAddSheet = false
 
@@ -47,6 +48,7 @@ struct ToolsView: View {
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
+                    ScrollCard(enhancer: scrollEnhancer)
                     ForEach(store.tools) { tool in
                         ToolRow(tool: tool, manager: manager) {
                             editingTool = tool

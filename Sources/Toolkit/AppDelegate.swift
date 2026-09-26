@@ -13,6 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let toolManager: ToolManager
     private let tempSensor = TempSensorService()
     private let ruleEngine = RuleEngine()
+    let scrollEnhancer = ScrollEnhancer()
 
     override init() {
         toolManager = ToolManager(toolStore: toolStore)
@@ -36,7 +37,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 toolStore: toolStore,
                 toolManager: toolManager,
                 tempSensor: tempSensor,
-                ruleEngine: ruleEngine
+                ruleEngine: ruleEngine,
+                scrollEnhancer: scrollEnhancer
             )
         )
 

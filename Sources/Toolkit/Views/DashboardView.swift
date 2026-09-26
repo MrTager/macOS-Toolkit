@@ -7,6 +7,7 @@ struct ToolkitView: View {
     @ObservedObject var toolManager: ToolManager
     @ObservedObject var tempSensor: TempSensorService
     @ObservedObject var ruleEngine: RuleEngine
+    @ObservedObject var scrollEnhancer: ScrollEnhancer
 
     @State private var selectedTab = 0
 
@@ -33,7 +34,7 @@ struct ToolkitView: View {
                 switch selectedTab {
                 case 0: DashboardView(monitor: monitor, tempSensor: tempSensor)
                 case 1: ProcessListView(processMonitor: processMonitor)
-                case 2: ToolsView(store: toolStore, manager: toolManager)
+                case 2: ToolsView(store: toolStore, manager: toolManager, scrollEnhancer: scrollEnhancer)
                 default: RulesView(engine: ruleEngine)
                 }
             }
