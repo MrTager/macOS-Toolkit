@@ -2,10 +2,20 @@ import AppKit
 import Combine
 import SwiftUI
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     private var statusItem: NSStatusItem?
     private let popover = NSPopover()
+    private var mainWindow: NSWindow?
     private var cancellables = Set<AnyCancellable>()
+    @Published private var dockIconVisible = false {
+        didSet {
+            NSApp.setActivationPolicy(dockIconVisible ? .regular : .accessory)
+        }
+    }
+
+    var dockIconBinding: Binding<Bool> {
+        Binding(get: { self.dockIconVisible }, set: { self.dockIconVisible = $0 })
+    }
 
     private let monitor = SystemMonitor()
     private let processMonitor = ProcessMonitor()
@@ -38,9 +48,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 toolManager: toolManager,
                 tempSensor: tempSensor,
                 ruleEngine: ruleEngine,
-                scrollEnhancer: scrollEnhancer
+                scrollEnhancer: scrollEnhancer,
+                dockIcon: dockIconBinding
             )
         )
+
+        setupMainWindow()
 
         monitor.$statusText
             .combineLatest(monitor.$cpu)
@@ -70,13 +83,69 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let event = NSApp.currentEvent else { return }
         if event.type == .rightMouseUp {
             let menu = NSMenu()
+            menu.addItem(withTitle: "打开主窗口", action: #selector(showMainWindow), keyEquivalent: "n")
+            menu.addItem(
+                withTitle: "在 Dock 显示图标",
+                action: #selector(toggleDockIcon),
+                keyEquivalent: "d"
+            )
+            if let item = menu.items.last {
+                item.state = dockIconVisible ? .on : .off
+            }
+            menu.addItem(.separator())
             menu.addItem(withTitle: "退出 Toolkit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
             statusItem?.menu = menu
             statusItem?.button?.performClick(nil)
             DispatchQueue.main.async { self.statusItem?.menu = nil }
+        } else if event.type == .otherMouseUp {
+            showMainWindow()
         } else {
             togglePopover(sender)
         }
+    }
+
+    @objc private func toggleDockIcon() {
+        dockIconVisible.toggle()
+        if dockIconVisible {
+            showMainWindow()
+        }
+    }
+
+    @objc private func showMainWindow() {
+        if mainWindow == nil {
+            setupMainWindow()
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        mainWindow?.makeKeyAndOrderFront(nil)
+    }
+
+    private func setupMainWindow() {
+        let contentView = ToolkitView(
+            monitor: monitor,
+            processMonitor: processMonitor,
+            toolStore: toolStore,
+            toolManager: toolManager,
+            tempSensor: tempSensor,
+            ruleEngine: ruleEngine,
+            scrollEnhancer: scrollEnhancer,
+            dockIcon: dockIconBinding
+        )
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 760, height: 680),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "macOS Toolkit"
+        window.contentViewController = NSHostingController(rootView: contentView)
+        window.isReleasedWhenClosed = false
+        window.center()
+        mainWindow = window
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        showMainWindow()
+        return true
     }
 
     private func togglePopover(_ sender: Any?) {

@@ -8,6 +8,7 @@ struct ToolkitView: View {
     @ObservedObject var tempSensor: TempSensorService
     @ObservedObject var ruleEngine: RuleEngine
     @ObservedObject var scrollEnhancer: ScrollEnhancer
+    var dockIcon: Binding<Bool>? = nil
 
     @State private var selectedTab = 0
 
@@ -19,6 +20,12 @@ struct ToolkitView: View {
                 tabButton("工具", icon: "wrench.and.screwdriver", tag: 2)
                 tabButton("规则", icon: "bell.badge", tag: 3)
                 Spacer()
+                if let dockIcon {
+                    Toggle("Dock 图标", isOn: dockIcon)
+                        .toggleStyle(.switch)
+                        .controlSize(.mini)
+                        .font(.system(size: 11))
+                }
                 Text("开机 \(Format.duration(monitor.uptime))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -40,7 +47,7 @@ struct ToolkitView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(width: 420, height: 620)
+        .frame(minWidth: 420, minHeight: 620)
     }
 
     private func tabButton(_ title: String, icon: String, tag: Int) -> some View {
