@@ -12,6 +12,7 @@ enum SMCHelperBridge {
             return false
         }
         let script = """
+        launchctl bootout system/local.toolkit.smchelper 2>/dev/null || true
         rm -f /Library/LaunchDaemons/local.toolkit.smchelper.plist /Library/PrivilegedHelperTools/local.toolkit.smchelper
         cp '\(helperURL.path)' /Library/PrivilegedHelperTools/local.toolkit.smchelper
         chmod 755 /Library/PrivilegedHelperTools/local.toolkit.smchelper
@@ -28,7 +29,7 @@ enum SMCHelperBridge {
         PLIST
         chown root:wheel /Library/LaunchDaemons/local.toolkit.smchelper.plist
         chmod 644 /Library/LaunchDaemons/local.toolkit.smchelper.plist
-        launchctl load /Library/LaunchDaemons/local.toolkit.smchelper.plist
+        launchctl bootstrap system /Library/LaunchDaemons/local.toolkit.smchelper.plist
         exit 0
         """
         return runAsAdmin(script, prompt: "macOS Toolkit 需要安装 SMC 特权助手以读取温度与控制风扇")
@@ -36,7 +37,7 @@ enum SMCHelperBridge {
 
     static func uninstall() {
         _ = runAsAdmin(
-            "launchctl unload /Library/LaunchDaemons/local.toolkit.smchelper.plist 2>/dev/null; rm -f /Library/LaunchDaemons/local.toolkit.smchelper.plist /Library/PrivilegedHelperTools/local.toolkit.smchelper; exit 0",
+            "launchctl bootout system/local.toolkit.smchelper 2>/dev/null; rm -f /Library/LaunchDaemons/local.toolkit.smchelper.plist /Library/PrivilegedHelperTools/local.toolkit.smchelper; exit 0",
             prompt: "移除 SMC 特权助手"
         )
     }
@@ -56,7 +57,8 @@ enum SMCHelperBridge {
     }
 
     static func ping() -> Bool {
-        call("ping", key: nil, data: nil) { reply in
+        guard FileManager.default.fileExists(atPath: "/Library/PrivilegedHelperTools/local.toolkit.smchelper") else { return false }
+        return call("ping", key: nil, data: nil) { reply in
             xpc_dictionary_get_int64(reply, "ok") == 1
         } ?? false
     }
@@ -116,7 +118,6 @@ enum SMCHelperBridge {
             }
             semaphore.signal()
         }
-        xpc_release(message)
         _ = semaphore.wait(timeout: .now() + 3)
         xpc_connection_cancel(connection)
         return result

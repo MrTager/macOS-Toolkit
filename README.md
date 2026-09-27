@@ -9,6 +9,8 @@
 - **进程管理**：全量进程列表（CPU/内存排序、搜索），支持 SIGTERM / SIGKILL 结束进程
 - **工具中枢**：工具列表可增删改、拖拽排序，支持「从已安装应用选择」自动填 Bundle ID；一键启停 + 实时运行状态；支持开机自启开关
 - **自动化规则**：CPU/内存/电池温度/CPU 热压力阈值告警，系统通知推送，冷却间隔防骚扰，规则持久化 + 最近事件记录
+- **风扇监控与控制**：直接读取 Intel Mac 的 AppleSMC 风扇转速、转速上下限及温度；每个风扇可选系统自动、固定转速或按温度传感器调速，菜单栏可显示风扇转速和 CPU 温度。写入需要一次性安装特权助手；温度传感器失效、退出应用或控制心跳中断时恢复系统自动控制。
+- **Touch Bar**：前台显示下载/上传网速、CPU 占用、风扇转速、CPU 温度，最后一项“打开窗口”进入主窗口。
 
 ## 使用
 
@@ -25,6 +27,7 @@ open "dist/macOS Toolkit.app"
 
 - 左键菜单栏图标：打开面板
 - 右键菜单栏图标：退出应用
+- 风扇页：先查看实时读数；要修改转速，点击“安装风扇控制助手…”并完成 macOS 管理员授权。
 
 ## 开发
 
@@ -52,8 +55,8 @@ Sources/Toolkit/
     └── ToolsView.swift              # 工具页
 ```
 
-## 后续规划
+## 风扇控制说明
 
-- ~~P2 完整版：CPU die 温度/风扇转速~~ 已确认 macOS 26 封死了全部无特权 SMC 通道（经典 AppleSMC IOConnectCall 接口移除、libSMC 不在 dyld 缓存、IOReport 采样为空、powermetrics 仅 root 可用），验证过程见 `scripts/probe-smc.c`。如需 CPU die 温度/风扇控制需 SMJobBless 特权助手（待需求明确再做）
-- ~~P4：自动化规则~~ 已完成
+`scripts/probe-smc.c` 使用 80 字节的 AppleSMC 请求结构；先前 88 字节结构导致了 macOS 26 不支持 SMC 的误判。当前在 Intel MacBookPro16,2 / macOS 26.6.2 上验证了只读风扇与温度数据。控制写入由特权助手执行，并仅允许风扇模式与设备允许范围内的目标转速。Apple Silicon 和其他机型的写入兼容性尚需实机验证。
 
+此功能使用独立的 AppleSMC 实现，不依赖 Macs Fan Control 进程。退出 Toolkit 会恢复由 Toolkit 接管的风扇为系统自动控制。若辅助程序尚未安装，风扇页保持只读。

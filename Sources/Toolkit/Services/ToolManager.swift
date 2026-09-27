@@ -30,11 +30,13 @@ final class ToolStore: ObservableObject {
         if tools.isEmpty {
             tools = Self.defaultTools
             save()
+        } else if tools.contains(where: { $0.bundleIdentifier?.lowercased() == "com.crystalidea.macsfancontrol" }) {
+            tools.removeAll { $0.bundleIdentifier?.lowercased() == "com.crystalidea.macsfancontrol" }
+            save()
         }
     }
 
     static let defaultTools: [ManagedTool] = [
-        ManagedTool(name: "Macs Fan Control", bundleIdentifier: "com.crystalidea.MacsFanControl", description: "风扇控制与温度监控"),
         ManagedTool(name: "Mos", bundleIdentifier: "com.caldis.Mos", description: "鼠标滚动平滑与方向反转"),
         ManagedTool(name: "Clash Verge", bundleIdentifier: "io.github.clash-verge-rev.clash-verge-rev", description: "网络代理"),
         ManagedTool(name: "Tencent Lemon", bundleIdentifier: "com.tencent.LemonLite", description: "系统清理"),

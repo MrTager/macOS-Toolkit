@@ -1,5 +1,5 @@
 import Foundation
-import IOKit
+import SMCCore
 
 struct FanInfo: Identifiable {
     let id: Int
@@ -7,8 +7,8 @@ struct FanInfo: Identifiable {
     let minRPM: Int
     let maxRPM: Int
     var currentRPM: Int
-    var manualMode = false
-    var targetRPM: Int = 0
+    var targetRPM: Int
+    var manualMode: Bool
 }
 
 struct SensorValue: Identifiable {
@@ -18,25 +18,10 @@ struct SensorValue: Identifiable {
     let unit: String
 }
 
-enum FanControlMode: String, Codable {
-    case system = "系统自动"
-    case manual = "手动恒速"
-}
-
-enum FanCurveLevel: Int, Codable, CaseIterable, Identifiable {
-    case idle = 0
-    case low = 1
-    case medium = 2
-    case high = 3
-    var id: Int { rawValue }
-    var label: String {
-        switch self {
-        case .idle: return "闲时"
-        case .low: return "低温"
-        case .medium: return "中温"
-        case .high: return "高温"
-        }
-    }
+enum FanSetting: Equatable {
+    case system
+    case constant(Int)
+    case sensor(key: String, low: Double, high: Double)
 }
 
 final class SMCService: ObservableObject {
@@ -44,20 +29,11 @@ final class SMCService: ObservableObject {
     @Published private(set) var sensors: [SensorValue] = []
     @Published private(set) var available = false
     @Published private(set) var helperInstalled = false
-    @Published private(set) var mode: FanControlMode = .system
-    @Published var curveThresholds: [FanCurveLevel: Double] = [
-        .idle: 45, .low: 55, .medium: 65, .high: 75
-    ]
+    @Published private(set) var settings: [Int: FanSetting] = [:]
+    @Published private(set) var errorMessage: String?
 
-    private var conn: io_connect_t = 0
     private var timer: Timer?
-    private var curveTimer: Timer?
-
-    private static let fanKeys = ["F0Ac", "F1Ac"]
-    private static let fanNameKeys = ["F0ID", "F1ID"]
-    private static let fanMinKeys = ["F0Mn", "F1Mn"]
-    private static let fanMaxKeys = ["F0Mx", "F1Mx"]
-
+    private var previousTargets: [Int: Int] = [:]
     private static let sensorKeys: [(String, String)] = [
         ("TC0P", "CPU 近端"), ("TC0C", "CPU 核心"), ("TC0D", "CPU 二极管"), ("TC0E", "CPU 封装"),
         ("TC0H", "CPU 散热器"), ("TC0J", "CPU PECI"), ("TCAD", "CPU 相邻"),
@@ -66,175 +42,170 @@ final class SMCService: ObservableObject {
         ("TG0P", "GPU 近端"), ("TG0D", "GPU 二极管"), ("TG0H", "GPU 散热器"),
         ("TM0P", "内存槽近端"), ("TM0S", "内存槽1"), ("TM8P", "内存槽2"), ("TM9P", "内存槽3"),
         ("TA0P", "环境"), ("TB0T", "电池"), ("TB1T", "电池1"), ("TB2T", "电池2"),
-        ("TW0P", "无线网卡"), ("TL0P", "雷电"), ("TMCD", "主板"), ("Ts0S", "内存 proximity"),
-        ("PCPG", "CPU 功耗"), ("PCPL", "平台功耗"), ("PCPT", "CPU 总功耗"), ("PSTR", "系统总功耗")
+        ("TW0P", "无线网卡"), ("TL0P", "雷电"), ("TMCD", "主板")
     ]
 
     func start() {
+        timer?.invalidate()
         helperInstalled = SMCHelperBridge.ping()
-        if helperInstalled {
-            discoverFans()
-            discoverSensors()
-            guard !fans.isEmpty || !sensors.isEmpty else { return }
-            available = true
-            refresh()
-            timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
-                self?.refresh()
-            }
-        }
+        discover()
+        refresh()
+        timer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in self?.refresh() }
     }
 
     func installHelper() {
         DispatchQueue.global(qos: .userInitiated).async {
-            let ok = SMCHelperBridge.install() && SMCHelperBridge.ping()
+            let installed = SMCHelperBridge.install() && SMCHelperBridge.ping()
             DispatchQueue.main.async {
-                self.helperInstalled = ok
-                if ok {
-                    self.start()
-                }
+                self.helperInstalled = installed
+                self.errorMessage = installed ? nil : "特权助手安装失败，风扇保持系统自动控制"
             }
         }
     }
 
     func stop() {
         timer?.invalidate()
-        curveTimer?.invalidate()
+        for fan in fans where settings[fan.id] != nil { _ = setSystemControl(fan: fan.id) }
     }
 
-    deinit {
-        stop()
+    private func read(_ key: String) -> (type: String, data: [UInt8])? {
+        var value = ToolkitSMCValue()
+        guard toolkit_smc_read(key, &value), value.size > 0 else { return nil }
+        let type = withUnsafeBytes(of: value.type) { raw in String(bytes: raw.prefix(4), encoding: .ascii) ?? "" }
+        let data = withUnsafeBytes(of: value.bytes) { raw in Array(raw.prefix(Int(value.size))) }
+        return (type, data)
     }
 
-    private func readKey(_ fourCC: String) -> (type: String, size: Int, data: [UInt8])? {
-        guard helperInstalled else { return nil }
-        return SMCHelperBridge.read(key: fourCC)
-    }
-
-    private func writeKey(_ fourCC: String, data: [UInt8]) -> Bool {
-        guard helperInstalled else { return false }
-        return SMCHelperBridge.write(key: fourCC, data: data)
-    }
-
-    private func fourCCString(_ value: UInt32) -> String {
-        let bytes: [UInt8] = [
-            UInt8((value >> 24) & 0xFF), UInt8((value >> 16) & 0xFF),
-            UInt8((value >> 8) & 0xFF), UInt8(value & 0xFF)
-        ]
-        return String(bytes: bytes, encoding: .ascii) ?? "????"
-    }
-
-    private func numeric(_ typeName: String, _ data: [UInt8]) -> Double? {
-        guard data.count >= 2 else { return nil }
-        switch typeName {
+    private func numeric(_ key: String) -> Double? {
+        guard let (type, bytes) = read(key) else { return nil }
+        switch type {
+        case "flt ":
+            guard bytes.count >= 4 else { return nil }
+            let bits = bytes.prefix(4).enumerated().reduce(UInt32(0)) { $0 | (UInt32($1.element) << ($1.offset * 8)) }
+            return Double(Float(bitPattern: bits))
         case "sp78":
-            let raw = Int16(bitPattern: (UInt16(data[0]) << 8) | UInt16(data[1]))
-            return Double(raw) / 256.0
+            guard bytes.count >= 2 else { return nil }
+            return Double(Int16(bitPattern: UInt16(bytes[0]) << 8 | UInt16(bytes[1]))) / 256
         case "fpe2":
-            return Double((UInt16(data[0]) << 8) | UInt16(data[1])) / 4.0
-        case "fp2e":
-            return Double((UInt16(data[0]) << 8) | UInt16(data[1])) / 16384.0
-        case "sp5a":
-            return Double(Int8(bitPattern: data[0])) / 32.0
-        case "ui8 ", "ui8":
-            return Double(data[0])
+            guard bytes.count >= 2 else { return nil }
+            return Double(UInt16(bytes[0]) << 8 | UInt16(bytes[1])) / 4
+        case "ui8 ", "ui8", "flag": return Double(bytes[0])
         case "ui16":
-            return Double((UInt16(data[0]) << 8) | UInt16(data[1]))
-        case "ui32":
-            guard data.count >= 4 else { return nil }
-            let v = (UInt32(data[0]) << 24) | (UInt32(data[1]) << 16) | (UInt32(data[2]) << 8) | UInt32(data[3])
-            return Double(v)
-        default:
-            return nil
+            guard bytes.count >= 2 else { return nil }
+            return Double(UInt16(bytes[0]) << 8 | UInt16(bytes[1]))
+        default: return nil
         }
     }
 
-    private func discoverFans() {
-        var discovered: [FanInfo] = []
-        for (index, _) in Self.fanKeys.enumerated() {
-            guard let (_, _, rpmData) = readKey(Self.fanKeys[index]),
-                  let rpm = numeric("fpe2", rpmData) else { continue }
-
-            var name = "风扇 \(index)"
-            if let (_, _, nameData) = readKey(Self.fanNameKeys[index]), nameData.count >= 4 {
-                let length = min(Int(nameData[0]), nameData.count - 1)
-                if length > 1, let decoded = String(bytes: nameData[1...length], encoding: .utf8) {
-                    name = decoded
-                }
-            }
-
-            let minRPM = readKey(Self.fanMinKeys[index]).flatMap { numeric("fpe2", $0.data) }.map(Int.init) ?? 1200
-            let maxRPM = readKey(Self.fanMaxKeys[index]).flatMap { numeric("fpe2", $0.data) }.map(Int.init) ?? 6000
-            discovered.append(FanInfo(
-                id: index,
-                name: name,
-                minRPM: minRPM,
-                maxRPM: maxRPM,
-                currentRPM: Int(rpm)
-            ))
+    private func discover() {
+        let count = min(10, max(0, Int(numeric("FNum") ?? 0)))
+        fans = (0..<count).compactMap { id in
+            let key = "F\(id)"
+            guard let current = numeric(key + "Ac"), let lower = numeric(key + "Mn"),
+                  let upper = numeric(key + "Mx"), upper > lower else { return nil }
+            return FanInfo(id: id, name: "风扇 \(id + 1)", minRPM: Int(lower), maxRPM: Int(upper),
+                           currentRPM: Int(current), targetRPM: Int(numeric(key + "Tg") ?? current),
+                           manualMode: numeric(key + "Md") == 1)
         }
-        fans = discovered
-    }
-
-    private func discoverSensors() {
-        var found: [SensorValue] = []
-        for (key, label) in Self.sensorKeys {
-            guard let (type, _, data) = readKey(key),
-                  let value = numeric(type, data) else { continue }
-            let isTemp = type.hasPrefix("sp") || type == "fpe2" || type == "fp2e"
-            guard value > 0, value < 120 else { continue }
-            if isTemp && value < 1 { continue }
-            found.append(SensorValue(
-                id: key,
-                name: label,
-                value: value,
-                unit: key.hasPrefix("P") ? "W" : "°C"
-            ))
+        sensors = Self.sensorKeys.compactMap { key, label in
+            guard let value = numeric(key), value > 0, value < 130 else { return nil }
+            return SensorValue(id: key, name: label, value: value, unit: "°C")
         }
-        sensors = found.sorted { $0.name < $1.name }
+        available = !fans.isEmpty
     }
 
     func refresh() {
-        var updated = fans
-        for index in updated.indices {
-            if let (_, _, data) = readKey(Self.fanKeys[updated[index].id]),
-               let rpm = numeric("fpe2", data) {
-                updated[index].currentRPM = Int(rpm)
+        if helperInstalled && !SMCHelperBridge.ping() {
+            helperInstalled = false
+            settings.removeAll()
+            errorMessage = "风扇控制助手已断开"
+        }
+        for index in fans.indices {
+            let key = "F\(fans[index].id)"
+            if let value = numeric(key + "Ac") { fans[index].currentRPM = Int(value) }
+            if let value = numeric(key + "Tg") { fans[index].targetRPM = Int(value) }
+            if let value = numeric(key + "Md") { fans[index].manualMode = value == 1 }
+        }
+        sensors = sensors.compactMap { sensor in
+            guard let value = numeric(sensor.id), value > 0, value < 130 else { return nil }
+            return SensorValue(id: sensor.id, name: sensor.name, value: value, unit: sensor.unit)
+        }
+        for (id, setting) in settings {
+            if case let .sensor(key, low, high) = setting {
+                guard let fan = fans.first(where: { $0.id == id }) else { continue }
+                guard let temperature = sensors.first(where: { $0.id == key })?.value else {
+                    _ = setSystemControl(fan: id)
+                    errorMessage = "温度传感器失效，风扇 \(id + 1) 已恢复系统自动控制"
+                    continue
+                }
+                let fraction = max(0, min(1, (temperature - low) / (high - low)))
+                let rpm = Int((Double(fan.minRPM) + fraction * Double(fan.maxRPM - fan.minRPM)).rounded())
+                if previousTargets[id] != rpm { _ = writeRPM(rpm, fan: id) }
             }
         }
-        fans = updated
-
-        var updatedSensors: [SensorValue] = []
-        for sensor in sensors {
-            if let (type, _, data) = readKey(sensor.id),
-               let value = numeric(type, data), value > 0, value < 130 {
-                updatedSensors.append(SensorValue(id: sensor.id, name: sensor.name, value: value, unit: sensor.unit))
-            }
-        }
-        sensors = updatedSensors
     }
 
     var cpuTemperature: Double? {
-        sensors.first { $0.id == "TC0P" }?.value
-            ?? sensors.first { $0.id.hasPrefix("TC") && $0.unit == "°C" }?.value
+        sensors.first { $0.id == "TC0P" }?.value ?? sensors.first { $0.id.hasPrefix("TC") }?.value
     }
 
-    func setManualRPM(_ rpm: Int, fan: Int = 0) {
-        let clamped = max(fans.first { $0.id == fan }?.minRPM ?? 1200,
-                          min(rpm, fans.first { $0.id == fan }?.maxRPM ?? 6000))
-        let value = UInt16(clamped)
-        let data = [UInt8(value >> 8), UInt8(value & 0xFF)]
-        if writeKey("F0Md", data: [0x01]) {
-            _ = writeKey(fan == 0 ? "F0Tg" : "F1Tg", data: data)
-            mode = .manual
+    @discardableResult
+    func setSystemControl(fan id: Int) -> Bool {
+        guard helperInstalled, fans.contains(where: { $0.id == id }) else { return false }
+        let ok = SMCHelperBridge.write(key: "F\(id)Md", data: [0])
+        if ok { settings[id] = nil; previousTargets[id] = nil; refresh() }
+        else { errorMessage = "恢复风扇 \(id + 1) 自动控制失败" }
+        return ok
+    }
+
+    @discardableResult
+    func setConstantRPM(_ rpm: Int, fan id: Int) -> Bool {
+        guard let fan = fans.first(where: { $0.id == id }), helperInstalled else { return false }
+        let safe = max(fan.minRPM, min(fan.maxRPM, rpm))
+        guard writeRPM(safe, fan: id) else { return false }
+        settings[id] = .constant(safe)
+        return true
+    }
+
+    @discardableResult
+    func setSensorControl(fan id: Int, sensor key: String, low: Double, high: Double) -> Bool {
+        guard high > low + 1, sensors.contains(where: { $0.id == key }),
+              fans.contains(where: { $0.id == id }), helperInstalled else { return false }
+        settings[id] = .sensor(key: key, low: low, high: high)
+        previousTargets[id] = nil
+        refresh()
+        let success = previousTargets[id] != nil
+        if !success { settings[id] = nil }
+        return success
+    }
+
+    private func writeRPM(_ rpm: Int, fan id: Int) -> Bool {
+        let bits = Float(rpm).bitPattern
+        let bytes = (0..<4).map { UInt8((bits >> ($0 * 8)) & 0xff) }
+        let key = "F\(id)"
+        if fans.first(where: { $0.id == id })?.manualMode != true {
+            guard SMCHelperBridge.write(key: key + "Md", data: [1]) else {
+                errorMessage = "风扇 \(id + 1) 无法进入手动模式"
+                return false
+            }
+            Thread.sleep(forTimeInterval: 0.3)
         }
-    }
-
-    func setSystemControl() {
-        _ = writeKey("F0Md", data: [0x00])
-        mode = .system
-    }
-
-    private func applyCurveIfActive() {
-        guard mode == .system else { return }
+        guard SMCHelperBridge.write(key: key + "Tg", data: bytes) else {
+            errorMessage = "风扇 \(id + 1) 设置失败，已尝试恢复自动控制"
+            _ = SMCHelperBridge.write(key: key + "Md", data: [0])
+            return false
+        }
+        Thread.sleep(forTimeInterval: 0.1)
+        guard let observed = numeric(key + "Tg"), abs(observed - Double(rpm)) <= 5 else {
+            errorMessage = "风扇 \(id + 1) 未接受目标转速，已尝试恢复自动控制"
+            _ = SMCHelperBridge.write(key: key + "Md", data: [0])
+            return false
+        }
+        if let index = fans.firstIndex(where: { $0.id == id }) {
+            fans[index].manualMode = true
+            fans[index].targetRPM = rpm
+        }
+        previousTargets[id] = rpm
+        return true
     }
 }

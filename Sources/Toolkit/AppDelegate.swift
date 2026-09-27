@@ -25,6 +25,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     private let ruleEngine = RuleEngine()
     let scrollEnhancer = ScrollEnhancer()
     private let smcService = SMCService()
+    private lazy var touchBarController = TouchBarController { [weak self] in
+        self?.showMainWindow()
+    }
 
     override init() {
         toolManager = ToolManager(toolStore: toolStore)
@@ -39,7 +42,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         item.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
         statusItem = item
 
-        popover.contentSize = NSSize(width: 420, height: 620)
+        popover.contentSize = NSSize(width: 500, height: 620)
         popover.behavior = .transient
         popover.contentViewController = NSHostingController(
             rootView: ToolkitView(
@@ -53,19 +56,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
                 dockIcon: dockIconBinding,
                 smc: smcService
             )
+            .frame(width: 500)
         )
 
         setupMainWindow()
+        touchBarController.install(on: mainWindow)
         smcService.start()
 
-        monitor.$statusText
-            .combineLatest(monitor.$cpu)
+        monitor.$network
+            .combineLatest(monitor.$cpu, smcService.$fans, smcService.$sensors)
             .receive(on: RunLoop.main)
-            .sink { [weak self] text, cpu in
+            .sink { [weak self] network, cpu, fans, sensors in
+                let temperature = sensors.first(where: { $0.id == "TC0P" })?.value
+                    ?? sensors.first(where: { $0.id.hasPrefix("TC") })?.value
+                self?.touchBarController.update(
+                    network: network, cpu: cpu, fans: fans, temperature: temperature
+                )
+            }
+            .store(in: &cancellables)
+
+        monitor.$statusText
+            .combineLatest(monitor.$cpu, smcService.$fans, smcService.$sensors)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] text, cpu, fans, sensors in
                 guard let button = self?.statusItem?.button else { return }
                 let color: NSColor = cpu.overall < 60 ? .systemGreen : (cpu.overall < 90 ? .systemYellow : .systemRed)
+                var title = text
+                if UserDefaults.standard.object(forKey: "showFanInMenuBar") as? Bool ?? true,
+                   let fan = fans.first {
+                    title += "  F\(fan.id + 1) \(fan.currentRPM)"
+                }
+                if UserDefaults.standard.bool(forKey: "showTempInMenuBar"),
+                   let sensor = sensors.first(where: { $0.id == "TC0P" }) {
+                    title += "  \(Int(sensor.value))°"
+                }
                 button.attributedTitle = NSAttributedString(
-                    string: text,
+                    string: title,
                     attributes: [
                         .font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium),
                         .foregroundColor: color
@@ -135,21 +161,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             smc: smcService
         )
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 760, height: 680),
+            contentRect: NSRect(x: 0, y: 0, width: 900, height: 680),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
         window.title = "macOS Toolkit"
         window.contentViewController = NSHostingController(rootView: contentView)
+        window.setContentSize(NSSize(width: 900, height: 680))
         window.isReleasedWhenClosed = false
         window.center()
         mainWindow = window
+        if NSApp.touchBar != nil {
+            touchBarController.install(on: window)
+        }
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         showMainWindow()
         return true
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        smcService.stop()
     }
 
     private func togglePopover(_ sender: Any?) {
@@ -160,6 +194,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             NSApp.activate(ignoringOtherApps: true)
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
             popover.contentViewController?.view.window?.makeKey()
+            touchBarController.installOnPopover(popover)
         }
     }
 }

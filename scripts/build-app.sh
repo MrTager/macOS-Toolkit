@@ -38,7 +38,7 @@ if [ ! -f "$BUILD_DIR/Toolkit" ]; then
 fi
 
 echo "==> 编译 SMC helper..."
-cc SMCHelper/main.c -o .build/smchelper -framework IOKit -Wall || echo "helper 编译失败（不影响其他功能）"
+cc SMCHelper/main.c SMCCore/SMCCore.c -I SMCCore/include -o .build/smchelper -framework IOKit -Wall -Werror
 
 rm -rf "$APP_DIR"
 mkdir -p "$APP_DIR/$APP_NAME.app/Contents/MacOS"
@@ -49,6 +49,7 @@ cp "$BUILD_DIR/Toolkit" "$APP_DIR/$APP_NAME.app/Contents/MacOS/Toolkit"
 if [ -f ".build/smchelper" ]; then
     mkdir -p "$APP_DIR/$APP_NAME.app/Contents/Library/LaunchServices"
     cp .build/smchelper "$APP_DIR/$APP_NAME.app/Contents/Library/LaunchServices/local.toolkit.smchelper"
+    codesign --force --sign - "$APP_DIR/$APP_NAME.app/Contents/Library/LaunchServices/local.toolkit.smchelper"
     cp SMCHelper/Info.plist "$APP_DIR/$APP_NAME.app/Contents/Library/LaunchServices/Info.plist"
 fi
 if [ -f "$ICON_SOURCE" ]; then
