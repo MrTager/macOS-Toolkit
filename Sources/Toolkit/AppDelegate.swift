@@ -24,6 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     private let tempSensor = TempSensorService()
     private let ruleEngine = RuleEngine()
     let scrollEnhancer = ScrollEnhancer()
+    private let smcService = SMCService()
 
     override init() {
         toolManager = ToolManager(toolStore: toolStore)
@@ -49,11 +50,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
                 tempSensor: tempSensor,
                 ruleEngine: ruleEngine,
                 scrollEnhancer: scrollEnhancer,
-                dockIcon: dockIconBinding
+                dockIcon: dockIconBinding,
+                smc: smcService
             )
         )
 
         setupMainWindow()
+        smcService.start()
 
         monitor.$statusText
             .combineLatest(monitor.$cpu)
@@ -128,7 +131,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             tempSensor: tempSensor,
             ruleEngine: ruleEngine,
             scrollEnhancer: scrollEnhancer,
-            dockIcon: dockIconBinding
+            dockIcon: dockIconBinding,
+            smc: smcService
         )
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 760, height: 680),

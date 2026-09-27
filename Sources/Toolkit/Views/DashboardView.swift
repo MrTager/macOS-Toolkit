@@ -9,6 +9,7 @@ struct ToolkitView: View {
     @ObservedObject var ruleEngine: RuleEngine
     @ObservedObject var scrollEnhancer: ScrollEnhancer
     var dockIcon: Binding<Bool>? = nil
+    @ObservedObject var smc: SMCService
 
     @State private var selectedTab = 0
 
@@ -17,8 +18,9 @@ struct ToolkitView: View {
             HStack(spacing: 12) {
                 tabButton("监控", icon: "chart.line.uptrend.xyaxis", tag: 0)
                 tabButton("进程", icon: "square.stack.3d.up", tag: 1)
-                tabButton("工具", icon: "wrench.and.screwdriver", tag: 2)
-                tabButton("规则", icon: "bell.badge", tag: 3)
+                tabButton("风扇", icon: "fanblades", tag: 2)
+                tabButton("工具", icon: "wrench.and.screwdriver", tag: 3)
+                tabButton("规则", icon: "bell.badge", tag: 4)
                 Spacer()
                 if let dockIcon {
                     Toggle("Dock 图标", isOn: dockIcon)
@@ -41,7 +43,8 @@ struct ToolkitView: View {
                 switch selectedTab {
                 case 0: DashboardView(monitor: monitor, tempSensor: tempSensor)
                 case 1: ProcessListView(processMonitor: processMonitor)
-                case 2: ToolsView(store: toolStore, manager: toolManager, scrollEnhancer: scrollEnhancer)
+                case 2: FanControlView(smc: smc)
+                case 3: ToolsView(store: toolStore, manager: toolManager, scrollEnhancer: scrollEnhancer)
                 default: RulesView(engine: ruleEngine)
                 }
             }
