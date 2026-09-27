@@ -43,6 +43,7 @@ final class SMCService: ObservableObject {
     @Published private(set) var fans: [FanInfo] = []
     @Published private(set) var sensors: [SensorValue] = []
     @Published private(set) var available = false
+    @Published private(set) var helperInstalled = false
     @Published private(set) var mode: FanControlMode = .system
     @Published var curveThresholds: [FanCurveLevel: Double] = [
         .idle: 45, .low: 55, .medium: 65, .high: 75
@@ -70,109 +71,48 @@ final class SMCService: ObservableObject {
     ]
 
     func start() {
-        guard openConnection() else { return }
-        discoverFans()
-        discoverSensors()
-        guard !fans.isEmpty || !sensors.isEmpty else { return }
-        available = true
-        refresh()
-        timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
-            self?.refresh()
+        helperInstalled = SMCHelperBridge.ping()
+        if helperInstalled {
+            discoverFans()
+            discoverSensors()
+            guard !fans.isEmpty || !sensors.isEmpty else { return }
+            available = true
+            refresh()
+            timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+                self?.refresh()
+            }
         }
-        curveTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
-            self?.applyCurveIfActive()
+    }
+
+    func installHelper() {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let ok = SMCHelperBridge.install() && SMCHelperBridge.ping()
+            DispatchQueue.main.async {
+                self.helperInstalled = ok
+                if ok {
+                    self.start()
+                }
+            }
         }
     }
 
     func stop() {
         timer?.invalidate()
         curveTimer?.invalidate()
-        if conn != 0 {
-            IOServiceClose(conn)
-            conn = 0
-        }
     }
 
     deinit {
         stop()
     }
 
-    private func openConnection() -> Bool {
-        var iterator: io_iterator_t = 0
-        guard IOServiceGetMatchingServices(kIOMainPortDefault, IOServiceMatching("AppleSMC"), &iterator) == KERN_SUCCESS else {
-            return false
-        }
-        defer { IOObjectRelease(iterator) }
-        let device = IOIteratorNext(iterator)
-        guard device != 0 else { return false }
-        defer { IOObjectRelease(device) }
-        guard IOServiceOpen(device, mach_task_self_, 0, &conn) == KERN_SUCCESS, conn != 0 else {
-            return false
-        }
-        return true
-    }
-
     private func readKey(_ fourCC: String) -> (type: String, size: Int, data: [UInt8])? {
-        guard conn != 0 else { return nil }
-        var key: UInt32 = 0
-        for byte in fourCC.utf8.prefix(4) {
-            key = (key << 8) | UInt32(byte)
-        }
-
-        var input = SMCParamStruct()
-        var output = SMCParamStruct()
-        var outputCount = MemoryLayout<SMCParamStruct>.size
-        input.key = key
-        input.data8 = 9
-        guard IOConnectCallStructMethod(
-            conn, UInt32(2),
-            &input, MemoryLayout<SMCParamStruct>.size,
-            &output, &outputCount
-        ) == KERN_SUCCESS, output.keyInfo.dataSize > 0 else {
-            return nil
-        }
-
-        let type = output.keyInfo.dataType
-        let size = Int(output.keyInfo.dataSize)
-        let typeName = fourCCString(type)
-
-        var input2 = SMCParamStruct()
-        var output2 = SMCParamStruct()
-        var outputCount2 = MemoryLayout<SMCParamStruct>.size
-        input2.key = key
-        input2.data8 = 5
-        input2.keyInfo = output.keyInfo
-        guard IOConnectCallStructMethod(
-            conn, UInt32(2),
-            &input2, MemoryLayout<SMCParamStruct>.size,
-            &output2, &outputCount2
-        ) == KERN_SUCCESS else {
-            return nil
-        }
-        return (typeName, size, Array(output2.bytes.prefix(size)))
+        guard helperInstalled else { return nil }
+        return SMCHelperBridge.read(key: fourCC)
     }
 
     private func writeKey(_ fourCC: String, data: [UInt8]) -> Bool {
-        guard conn != 0 else { return false }
-        var key: UInt32 = 0
-        for byte in fourCC.utf8.prefix(4) {
-            key = (key << 8) | UInt32(byte)
-        }
-
-        var input = SMCParamStruct()
-        var output = SMCParamStruct()
-        var outputCount = MemoryLayout<SMCParamStruct>.size
-        input.key = key
-        input.data8 = 6
-        input.keyInfo.dataSize = UInt8(data.count)
-        for (index, byte) in data.enumerated() where index < 32 {
-            input.bytes[index] = byte
-        }
-        return IOConnectCallStructMethod(
-            conn, UInt32(2),
-            &input, MemoryLayout<SMCParamStruct>.size,
-            &output, &outputCount
-        ) == KERN_SUCCESS
+        guard helperInstalled else { return false }
+        return SMCHelperBridge.write(key: fourCC, data: data)
     }
 
     private func fourCCString(_ value: UInt32) -> String {
@@ -297,22 +237,4 @@ final class SMCService: ObservableObject {
     private func applyCurveIfActive() {
         guard mode == .system else { return }
     }
-}
-
-private struct SMCParamStruct {
-    var key: UInt32 = 0
-    var vers: UInt8 = 0
-    var data8: UInt8 = 0
-    var keyInfo = SMCKeyData()
-    var result: UInt8 = 0
-    var status: UInt8 = 0
-    var data8_2: UInt8 = 0
-    var data32: UInt32 = 0
-    var bytes = [UInt8](repeating: 0, count: 32)
-}
-
-private struct SMCKeyData {
-    var dataSize: UInt8 = 0
-    var dataType: UInt32 = 0
-    var data8 = [UInt8](repeating: 0, count: 32)
 }

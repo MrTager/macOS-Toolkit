@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>local.toolkit.smchelper</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>smchelper</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+    <key>SMAuthorizedClients</key>
+    <array>
+        <dict>
+            <key>Identifier</key>
+            <string>local.toolkit.mac</string>
+            <key>AllowedAppleSigned</key>
+            <false/>
+            <key>CodeRequirementSet</key>
+            <dict>
+                <key>LaunchControl</key>
+                <dict>
+                    <key>AnchorAppleOrCodeSigning</key>
+                    <dict>
+                        <key>AnchorApple</key>
+                        <false/>
+                        <key>CodeSigning</key>
+                        <string>identifier local.toolkit.mac</string>
+                    </dict>
+                </dict>
+            </dict>
+        </dict>
+    </array>
+    <key>SMMachServices</key>
+    <dict>
+        <key>local.toolkit.smchelper</key>
+        <true/>
+    </dict>
+</dict>
+</plist>

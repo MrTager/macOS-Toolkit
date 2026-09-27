@@ -18,18 +18,25 @@ struct FanControlView: View {
     }
 
     private var unavailableCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 6) {
                 Image(systemName: "fan.slash")
                     .font(.system(size: 14))
                     .foregroundStyle(.secondary)
-                Text("SMC 通道不可用")
+                Text("此系统已关闭 SMC 直读通道")
                     .font(.system(size: 13, weight: .semibold))
             }
-            Text("当前 macOS 版本对普通应用关闭了 SMC 直读通道（CPU die 温度、风扇转速需特权助手支持）。监控页仍提供电池温度与 CPU 热压力。")
+            Text("经穷尽验证（含 root 特权与 stats 开源项目的标准实现），macOS 26 在 Intel 机型上已移除 AppleSMC 用户态读写接口，CPU die 温度与风扇转速无法由第三方应用读取。监控页的电池温度与 CPU 热压力仍可用。")
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 6) {
+                Image(systemName: "lightbulb")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.yellow)
+                Text("风扇控制建议继续使用 Macs Fan Control")
+                    .font(.system(size: 11))
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)

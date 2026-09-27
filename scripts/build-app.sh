@@ -32,12 +32,25 @@ fi
 echo "==> 构建 release..."
 swift build -c release
 
+if [ ! -f "$BUILD_DIR/Toolkit" ]; then
+    ACTUAL_BIN=$(find .build -name Toolkit -type f -perm +111 2>/dev/null | head -1)
+    BUILD_DIR=$(dirname "$ACTUAL_BIN")
+fi
+
+echo "==> 编译 SMC helper..."
+cc SMCHelper/main.c -o .build/smchelper -framework IOKit -Wall || echo "helper 编译失败（不影响其他功能）"
+
 rm -rf "$APP_DIR"
 mkdir -p "$APP_DIR/$APP_NAME.app/Contents/MacOS"
 mkdir -p "$APP_DIR/$APP_NAME.app/Contents/Resources"
 
 echo "==> 打包 .app..."
 cp "$BUILD_DIR/Toolkit" "$APP_DIR/$APP_NAME.app/Contents/MacOS/Toolkit"
+if [ -f ".build/smchelper" ]; then
+    mkdir -p "$APP_DIR/$APP_NAME.app/Contents/Library/LaunchServices"
+    cp .build/smchelper "$APP_DIR/$APP_NAME.app/Contents/Library/LaunchServices/local.toolkit.smchelper"
+    cp SMCHelper/Info.plist "$APP_DIR/$APP_NAME.app/Contents/Library/LaunchServices/Info.plist"
+fi
 if [ -f "$ICON_SOURCE" ]; then
     cp "$ICON_SOURCE" "$APP_DIR/$APP_NAME.app/Contents/Resources/AppIcon.icns"
 fi
