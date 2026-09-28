@@ -10,7 +10,7 @@
 - **工具中枢**：工具列表可增删改、拖拽排序，支持「从已安装应用选择」自动填 Bundle ID；一键启停 + 实时运行状态；支持开机自启开关
 - **自动化规则**：CPU/内存/电池温度/CPU 热压力阈值告警，系统通知推送，冷却间隔防骚扰，规则持久化 + 最近事件记录
 - **风扇监控与控制**：直接读取 Intel Mac 的 AppleSMC 风扇转速、转速上下限及温度；每个风扇可选系统自动、固定转速或按温度传感器调速，菜单栏可显示风扇转速和 CPU 温度。写入需要一次性安装特权助手；温度传感器失效、退出应用或控制心跳中断时恢复系统自动控制。
-- **Touch Bar**：前台显示下载/上传网速、CPU 占用、风扇转速、CPU 温度，最后一项“打开窗口”进入主窗口。
+- **Touch Bar**：下载/上传网速、CPU 占用、风扇转速、CPU 温度、内存与系统盘使用率进度条，以及“打开窗口”按钮跨应用常驻；右侧系统 Control Strip 保留。轻触常驻入口可收起或重新展开，菜单栏右键也可控制。
 
 ## 使用
 
@@ -60,3 +60,5 @@ Sources/Toolkit/
 `scripts/probe-smc.c` 使用 80 字节的 AppleSMC 请求结构；先前 88 字节结构导致了 macOS 26 不支持 SMC 的误判。当前在 Intel MacBookPro16,2 / macOS 26.6.2 上验证了只读风扇与温度数据。控制写入由特权助手执行，并仅允许风扇模式与设备允许范围内的目标转速。Apple Silicon 和其他机型的写入兼容性尚需实机验证。
 
 此功能使用独立的 AppleSMC 实现，不依赖 Macs Fan Control 进程。退出 Toolkit 会恢复由 Toolkit 接管的风扇为系统自动控制。若辅助程序尚未安装，风扇页保持只读。
+
+Touch Bar 常驻功能使用系统私有 Control Strip 接口（实现参考 [MacDuo](https://github.com/bugwz/MacDuo)，授权见 `THIRD_PARTY_LICENSES/MacDuo-MIT.txt`）。接口通过运行时检测加载；若系统版本不支持，Toolkit 仍保留前台 Touch Bar 控件、菜单栏和主窗口。退出应用会注销常驻入口。

@@ -65,12 +65,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
 
         monitor.$network
             .combineLatest(monitor.$cpu, smcService.$fans, smcService.$sensors)
+            .combineLatest(monitor.$memory, monitor.$disk)
             .receive(on: RunLoop.main)
-            .sink { [weak self] network, cpu, fans, sensors in
+            .sink { [weak self] metrics, memory, disk in
+                let (network, cpu, fans, sensors) = metrics
                 let temperature = sensors.first(where: { $0.id == "TC0P" })?.value
                     ?? sensors.first(where: { $0.id.hasPrefix("TC") })?.value
                 self?.touchBarController.update(
-                    network: network, cpu: cpu, fans: fans, temperature: temperature
+                    network: network, cpu: cpu, fans: fans, temperature: temperature,
+                    memory: memory, disk: disk
                 )
             }
             .store(in: &cancellables)
@@ -106,6 +109,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         tempSensor.start()
         ruleEngine.configure(monitor: monitor, tempSensor: tempSensor)
         ruleEngine.start()
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self, selector: #selector(touchBarDidWake), name: NSWorkspace.didWakeNotification, object: nil
+        )
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+            guard let self else { return }
+            if !self.touchBarController.presentPersistent() {
+                NSLog("Toolkit persistent Touch Bar unavailable; app controls remain active")
+            }
+        }
     }
 
     @objc private func statusItemClicked(_ sender: NSStatusBarButton) {
@@ -122,6 +134,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
                 item.state = dockIconVisible ? .on : .off
             }
             menu.addItem(.separator())
+            menu.addItem(
+                withTitle: "显示常驻 Touch Bar", action: #selector(showPersistentTouchBar), keyEquivalent: ""
+            ).target = self
+            menu.addItem(
+                withTitle: "恢复系统 Touch Bar", action: #selector(dismissPersistentTouchBar), keyEquivalent: ""
+            ).target = self
+            menu.addItem(.separator())
             menu.addItem(withTitle: "退出 Toolkit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
             statusItem?.menu = menu
             statusItem?.button?.performClick(nil)
@@ -137,6 +156,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         dockIconVisible.toggle()
         if dockIconVisible {
             showMainWindow()
+        }
+    }
+
+    @objc private func showPersistentTouchBar() {
+        _ = touchBarController.presentPersistent()
+    }
+
+    @objc private func dismissPersistentTouchBar() {
+        touchBarController.dismissPersistent()
+    }
+
+    @objc private func touchBarDidWake() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+            self?.touchBarController.restoreAfterWake()
         }
     }
 
@@ -183,6 +216,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
+        touchBarController.uninstallPersistent()
         smcService.stop()
     }
 

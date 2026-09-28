@@ -6,9 +6,10 @@ let package = Package(
     platforms: [.macOS(.v13)],
     targets: [
         .target(name: "SMCCore", path: "SMCCore", publicHeadersPath: "include", linkerSettings: [.linkedFramework("IOKit")]),
+        .target(name: "TouchBarBridge", path: "TouchBarBridge", publicHeadersPath: "include", linkerSettings: [.linkedFramework("AppKit")]),
         .executableTarget(
             name: "Toolkit",
-            dependencies: ["SMCCore"],
+            dependencies: ["SMCCore", "TouchBarBridge"],
             path: "Sources/Toolkit",
             linkerSettings: [
                 .linkedFramework("SystemConfiguration"),
